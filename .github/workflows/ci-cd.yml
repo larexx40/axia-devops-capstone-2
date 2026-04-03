@@ -1,0 +1,94 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # 1: Test & Lint
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          python -m flake8 app.py database.py \
+          utils.py config.py test_app.py
+
+      - name: Run tests with pytest
+        run: python -m pytest test_app.py -v
+
+  # 2: Build & Push to Docker Hub
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get short commit SHA
+        run: echo "SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
+          docker login \
+          -u "${{ secrets.DOCKERHUB_USERNAME }}" \
+          --password-stdin
+
+      - name: Build multi-stage Docker image
+        run: |
+          docker build \
+            --target production \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:latest \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:v1.0.0 \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:${{ env.SHA }} \
+            .
+
+      - name: Push all tags to Docker Hub
+        run: |
+          docker push \
+            ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:latest
+          docker push \
+            ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:v1.0.0
+          docker push \
+            ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:${{ env.SHA }}
+
+  # 3: Deploy to EC2
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy via SSH to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull \
+              ${{ secrets.DOCKERHUB_USERNAME }}/internal-utility-service:latest
+            bash /home/ubuntu/scripts/deploy.sh latest
