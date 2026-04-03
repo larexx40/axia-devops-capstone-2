@@ -1,16 +1,10 @@
-import config
-
 def get_users():
-    # Fake database simulation
+    """
+    Returns a list of users.
+    Only safe, non-sensitive fields are returned.
+    Credentials are never exposed in API responses.
+    """
     return [
-        {
-            "id": 1,
-            "name": "Alice",
-            "db_user": config.DB_USER  #leaking credentials
-        },
-        {
-            "id": 2,
-            "name": "Bob",
-            "db_password": config.DB_PASSWORD  #leaking password
-        }
+        {"id": 1, "name": "Alice", "role": "admin"},
+        {"id": 2, "name": "Bob", "role": "viewer"}
     ]
