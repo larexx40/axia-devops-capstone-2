@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      target: production
+    container_name: utility-app
+    restart: always
+    expose:
+      - "5000"
+    environment:
+      - APP_ENV=development
+      - DB_HOST=localhost
+      - DB_USER=dev_user
+      - DB_NAME=internal_db
+      - SECRET_KEY=local-dev-secret-key
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:alpine
+    container_name: utility-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    restart: always
